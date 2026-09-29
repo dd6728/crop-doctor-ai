@@ -3,28 +3,13 @@ import torch
 from PIL import Image
 from transformers import ViTImageProcessor, ViTForImageClassification
 
-# --------------------------------------------------
-# PAGE SETTINGS
-# --------------------------------------------------
-
 st.set_page_config(
     page_title="Crop Doctor AI",
-    page_icon="🌱",
-    layout="centered"
+    page_icon="🌱"
 )
-
-# --------------------------------------------------
-# TITLE
-# --------------------------------------------------
 
 st.title("🌱 Crop Doctor AI")
-st.write(
-    "Upload a crop image for preliminary plant-health screening."
-)
-
-# --------------------------------------------------
-# MODEL
-# --------------------------------------------------
+st.write("Upload a crop image for preliminary plant-health screening.")
 
 MODEL_ID = "ayerr/plant-disease-classification"
 MODEL_SUBFOLDER = "ayerr/plant-disease-classification"
@@ -48,38 +33,26 @@ def load_model():
     return processor, model
 
 
-# Load model
 try:
     processor, model = load_model()
-    st.success("✅ AI model loaded successfully!")
+    st.success("✅ AI model ready!")
 except Exception as e:
-    st.error("❌ AI model could not be loaded.")
-    st.code(str(e))
+    st.error("❌ Model loading failed")
+    st.exception(e)
     st.stop()
 
-# --------------------------------------------------
-# LANGUAGE
-# --------------------------------------------------
 
 language = st.radio(
     "Choose Language / மொழியை தேர்வு செய்யவும்",
     ["English", "Tamil"]
 )
 
-# --------------------------------------------------
-# IMAGE UPLOAD
-# --------------------------------------------------
-
 uploaded_file = st.file_uploader(
-    "Upload Crop Image / பயிர் படத்தை Upload செய்யவும்",
+    "📷 Upload Crop Image",
     type=["jpg", "jpeg", "png"]
 )
 
-# --------------------------------------------------
-# IMAGE + ANALYSIS
-# --------------------------------------------------
-
-if uploaded_file is not None:
+if uploaded_file:
 
     image = Image.open(uploaded_file).convert("RGB")
 
@@ -93,131 +66,72 @@ if uploaded_file is not None:
 
         try:
 
-            with st.spinner("🔬 Analyzing crop..."):
+            with st.spinner("🔬 Analyzing..."):
 
-                # Process image
                 inputs = processor(
                     images=image,
                     return_tensors="pt"
                 )
 
-                # AI prediction
                 with torch.no_grad():
                     outputs = model(**inputs)
 
-                # Probabilities
                 probabilities = torch.softmax(
                     outputs.logits,
-                    dim=-1
+                    dim=1
                 )
 
-                # Best prediction
-                predicted_class = torch.argmax(
-                    probabilities,
-                    dim=-1
+                predicted_class = probabilities.argmax(
+                    dim=1
                 ).item()
 
-                # Confidence
                 confidence = probabilities[
-                    0,
-                    predicted_class
+                    0, predicted_class
                 ].item()
 
-                # Label
                 label = model.config.id2label[
                     predicted_class
                 ]
 
-            # --------------------------------------------------
-            # RESULT
-            # --------------------------------------------------
-
             st.divider()
 
-            if language == "English":
+            if label.lower() == "healthy":
 
-                st.subheader("🌱 Analysis Result")
-
-                if label.lower() == "healthy":
+                if language == "Tamil":
+                    st.success(
+                        "✅ செடி ஆரோக்கியமாக இருப்பது போல் தெரிகிறது."
+                    )
+                else:
                     st.success(
                         "✅ The plant appears healthy."
+                    )
+
+            else:
+
+                if language == "Tamil":
+                    st.warning(
+                        "⚠️ செடியில் நோய் அறிகுறிகள் இருக்கலாம்."
                     )
                 else:
                     st.warning(
                         "⚠️ Possible disease symptoms detected."
                     )
 
-                st.metric(
-                    "Confidence",
-                    f"{confidence * 100:.2f}%"
-                )
-
-                st.info(
-                    "📋 This is a preliminary AI screening. "
-                    "For confirmation, consult an agricultural expert."
-                )
-
-            else:
-
-                st.subheader("🌱 பகுப்பாய்வு முடிவு")
-
-                if label.lower() == "healthy":
-                    st.success(
-                        "✅ செடி ஆரோக்கியமாக இருப்பது போல் தெரிகிறது."
-                    )
-                else:
-                    st.warning(
-                        "⚠️ செடியில் நோய் அறிகுறிகள் இருக்கலாம்."
-                    )
-
-                st.metric(
-                    "நம்பகத்தன்மை",
-                    f"{confidence * 100:.2f}%"
-                )
-
-                st.info(
-                    "📋 இது ஒரு ஆரம்பநிலை AI பரிசோதனை மட்டுமே. "
-                    "உறுதிப்படுத்த வேளாண்மை நிபுணரை அணுகவும்."
-                )
-
-            # --------------------------------------------------
-            # TOP PREDICTIONS
-            # --------------------------------------------------
-
-            st.subheader("🔎 Top Predictions")
-
-            top_probabilities, top_indices = torch.topk(
-                probabilities[0],
-                k=min(2, probabilities.shape[-1])
+            st.metric(
+                "Confidence / நம்பகத்தன்மை",
+                f"{confidence * 100:.2f}%"
             )
 
-            for probability, index in zip(
-                top_probabilities,
-                top_indices
-            ):
-
-                prediction_name = model.config.id2label[
-                    index.item()
-                ]
-
-                percentage = probability.item() * 100
-
-                st.write(
-                    f"**{prediction_name}** — "
-                    f"{percentage:.2f}%"
-                )
-
-                st.progress(
-                    float(probability.item())
-                )
+            st.info(
+                "📋 This is a preliminary AI screening. "
+                "Please consult an agricultural expert for confirmation."
+            )
 
         except Exception as e:
 
-            st.error("❌ Analysis failed.")
-            st.code(str(e))
+            st.error("❌ Analysis failed")
+            st.exception(e)
 
 else:
 
-    st.info(
-        "📷 Please upload a crop image to begin."
-    )
+    st.info("📷 Please upload a crop image to begin.")
