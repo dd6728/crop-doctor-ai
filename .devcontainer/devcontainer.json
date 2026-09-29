@@ -3,7 +3,6 @@ import torch
 from PIL import Image
 from transformers import ViTImageProcessor, ViTForImageClassification
 
-
 # --------------------------------------------------
 # PAGE SETTINGS
 # --------------------------------------------------
@@ -14,7 +13,6 @@ st.set_page_config(
     layout="centered"
 )
 
-
 # --------------------------------------------------
 # TITLE
 # --------------------------------------------------
@@ -24,23 +22,25 @@ st.write(
     "Upload a crop image for preliminary plant-health screening."
 )
 
-
 # --------------------------------------------------
 # MODEL
 # --------------------------------------------------
 
 MODEL_ID = "ayerr/plant-disease-classification"
+MODEL_SUBFOLDER = "ayerr/plant-disease-classification"
 
 
 @st.cache_resource
 def load_model():
 
     processor = ViTImageProcessor.from_pretrained(
-        MODEL_ID
+        MODEL_ID,
+        subfolder=MODEL_SUBFOLDER
     )
 
     model = ViTForImageClassification.from_pretrained(
-        MODEL_ID
+        MODEL_ID,
+        subfolder=MODEL_SUBFOLDER
     )
 
     model.eval()
@@ -49,18 +49,22 @@ def load_model():
 
 
 # Load model
-processor, model = load_model()
-
+try:
+    processor, model = load_model()
+    st.success("✅ AI model loaded successfully!")
+except Exception as e:
+    st.error("❌ AI model could not be loaded.")
+    st.code(str(e))
+    st.stop()
 
 # --------------------------------------------------
-# LANGUAGE SELECTION
+# LANGUAGE
 # --------------------------------------------------
 
 language = st.radio(
     "Choose Language / மொழியை தேர்வு செய்யவும்",
     ["English", "Tamil"]
 )
-
 
 # --------------------------------------------------
 # IMAGE UPLOAD
@@ -71,156 +75,146 @@ uploaded_file = st.file_uploader(
     type=["jpg", "jpeg", "png"]
 )
 
-
 # --------------------------------------------------
-# AFTER IMAGE UPLOAD
+# IMAGE + ANALYSIS
 # --------------------------------------------------
 
 if uploaded_file is not None:
 
-    # Open image
     image = Image.open(uploaded_file).convert("RGB")
 
-    # Display image
     st.image(
         image,
         caption="Uploaded Crop Image",
         use_container_width=True
     )
 
-
-    # --------------------------------------------------
-    # ANALYZE BUTTON
-    # --------------------------------------------------
-
     if st.button("🔍 Analyze Crop", type="primary"):
 
-        with st.spinner("🔬 Analyzing crop..."):
+        try:
 
-            # ------------------------------------------
-            # STEP 1: PROCESS IMAGE
-            # ------------------------------------------
+            with st.spinner("🔬 Analyzing crop..."):
 
-            inputs = processor(
-                images=image,
-                return_tensors="pt"
+                # Process image
+                inputs = processor(
+                    images=image,
+                    return_tensors="pt"
+                )
+
+                # AI prediction
+                with torch.no_grad():
+                    outputs = model(**inputs)
+
+                # Probabilities
+                probabilities = torch.softmax(
+                    outputs.logits,
+                    dim=-1
+                )
+
+                # Best prediction
+                predicted_class = torch.argmax(
+                    probabilities,
+                    dim=-1
+                ).item()
+
+                # Confidence
+                confidence = probabilities[
+                    0,
+                    predicted_class
+                ].item()
+
+                # Label
+                label = model.config.id2label[
+                    predicted_class
+                ]
+
+            # --------------------------------------------------
+            # RESULT
+            # --------------------------------------------------
+
+            st.divider()
+
+            if language == "English":
+
+                st.subheader("🌱 Analysis Result")
+
+                if label.lower() == "healthy":
+                    st.success(
+                        "✅ The plant appears healthy."
+                    )
+                else:
+                    st.warning(
+                        "⚠️ Possible disease symptoms detected."
+                    )
+
+                st.metric(
+                    "Confidence",
+                    f"{confidence * 100:.2f}%"
+                )
+
+                st.info(
+                    "📋 This is a preliminary AI screening. "
+                    "For confirmation, consult an agricultural expert."
+                )
+
+            else:
+
+                st.subheader("🌱 பகுப்பாய்வு முடிவு")
+
+                if label.lower() == "healthy":
+                    st.success(
+                        "✅ செடி ஆரோக்கியமாக இருப்பது போல் தெரிகிறது."
+                    )
+                else:
+                    st.warning(
+                        "⚠️ செடியில் நோய் அறிகுறிகள் இருக்கலாம்."
+                    )
+
+                st.metric(
+                    "நம்பகத்தன்மை",
+                    f"{confidence * 100:.2f}%"
+                )
+
+                st.info(
+                    "📋 இது ஒரு ஆரம்பநிலை AI பரிசோதனை மட்டுமே. "
+                    "உறுதிப்படுத்த வேளாண்மை நிபுணரை அணுகவும்."
+                )
+
+            # --------------------------------------------------
+            # TOP PREDICTIONS
+            # --------------------------------------------------
+
+            st.subheader("🔎 Top Predictions")
+
+            top_probabilities, top_indices = torch.topk(
+                probabilities[0],
+                k=min(2, probabilities.shape[-1])
             )
 
+            for probability, index in zip(
+                top_probabilities,
+                top_indices
+            ):
 
-            # ------------------------------------------
-            # STEP 2: RUN AI MODEL
-            # ------------------------------------------
+                prediction_name = model.config.id2label[
+                    index.item()
+                ]
 
-            with torch.no_grad():
+                percentage = probability.item() * 100
 
-                outputs = model(**inputs)
+                st.write(
+                    f"**{prediction_name}** — "
+                    f"{percentage:.2f}%"
+                )
 
+                st.progress(
+                    float(probability.item())
+                )
 
-            # ------------------------------------------
-            # STEP 3: CONVERT LOGITS TO PROBABILITIES
-            # ------------------------------------------
+        except Exception as e:
 
-            probabilities = torch.softmax(
-                outputs.logits,
-                dim=-1
-            )
-
-
-            # ------------------------------------------
-            # STEP 4: FIND HIGHEST PROBABILITY
-            # ------------------------------------------
-
-            predicted_class = torch.argmax(
-                probabilities,
-                dim=-1
-            ).item()
-
-
-            # ------------------------------------------
-            # STEP 5: GET CONFIDENCE
-            # ------------------------------------------
-
-            confidence = probabilities[
-                0,
-                predicted_class
-            ].item()
-
-
-            # ------------------------------------------
-            # STEP 6: GET DISEASE NAME
-            # ------------------------------------------
-
-            label = model.config.id2label[
-                predicted_class
-            ]
-
-
-        # --------------------------------------------------
-        # DISPLAY RESULT
-        # --------------------------------------------------
-
-        st.divider()
-
-        if language == "English":
-
-            st.subheader("🌱 Analysis Result")
-
-            st.success(
-                f"Prediction: {label}"
-            )
-
-            st.metric(
-                "Confidence",
-                f"{confidence * 100:.2f}%"
-            )
-
-
-        else:
-
-            st.subheader("🌱 பகுப்பாய்வு முடிவு")
-
-            st.success(
-                f"கண்டறியப்பட்டது: {label}"
-            )
-
-            st.metric(
-                "நம்பகத்தன்மை",
-                f"{confidence * 100:.2f}%"
-            )
-
-
-        # --------------------------------------------------
-        # TOP 3 PREDICTIONS
-        # --------------------------------------------------
-
-        st.subheader("🔎 Top Predictions")
-
-        top_probabilities, top_indices = torch.topk(
-            probabilities[0],
-            k=min(3, probabilities.shape[-1])
-        )
-
-
-        for probability, index in zip(
-            top_probabilities,
-            top_indices
-        ):
-
-            disease_name = model.config.id2label[
-                index.item()
-            ]
-
-            percentage = probability.item() * 100
-
-            st.write(
-                f"**{disease_name}** — "
-                f"{percentage:.2f}%"
-            )
-
-            st.progress(
-                float(probability.item())
-            )
-
+            st.error("❌ Analysis failed.")
+            st.code(str(e))
 
 else:
 
